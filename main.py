@@ -1,18 +1,6 @@
 """
 main.py
 Notefolio FastAPI 애플리케이션 진입점 및 전체 라우터 정의
-
-엔드포인트 목록:
-  [계좌]        GET/POST   /api/accounts
-                GET/PUT    /api/accounts/{account_id}
-                PUT        /api/accounts/{account_id}/cash
-  [포트폴리오]  GET        /api/portfolio/summary
-  [종목 검색]   GET        /api/stocks/search
-  [보유 종목]   GET/POST   /api/holdings
-                GET/PUT/DELETE /api/holdings/{holding_id}
-  [매매 기록]   GET/POST   /api/trades
-                GET/DELETE /api/trades/{trade_id}
-  [시장 심리]   GET        /api/market/sentiment
 """
 
 import json
@@ -78,9 +66,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# 💡 Bug Fix 1: 브라우저 환경에 구애받지 않도록 127.0.0.1 주소도 CORS 허용 목록에 추가
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.js dev server
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -197,12 +189,10 @@ class HoldingOut(BaseModel):
     memo: str | None
     created_at: datetime
     updated_at: datetime
-    # 종목 메타
     name: str | None = None
     sector: str | None = None
     industry: str | None = None
     exchange: str | None = None
-    # 실시간 시세 (캐시)
     price_info: PriceInfo | None = None
 
     class Config:
@@ -265,10 +255,6 @@ class TradeOut(BaseModel):
 # ─────────────────────────────────────────────
 
 def _fetch_and_save_stock_meta(ticker: str, db: Session) -> StockMeta:
-    """
-    yfinance에서 종목 기본 정보를 가져와 stock_meta / stock_price_cache에 저장.
-    이미 존재하면 반환만 한다.
-    """
     existing = db.get(StockMeta, ticker)
     if existing:
         return existing
@@ -290,7 +276,6 @@ def _fetch_and_save_stock_meta(ticker: str, db: Session) -> StockMeta:
     )
     db.add(meta)
 
-    # 최초 시세도 함께 저장
     current_price = info.get("currentPrice") or info.get("regularMarketPrice")
     prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
     change_pct = None
@@ -322,7 +307,6 @@ def _fetch_and_save_stock_meta(ticker: str, db: Session) -> StockMeta:
 
 
 def _holding_to_out(h: AccountHolding) -> dict[str, Any]:
-    """AccountHolding ORM → HoldingOut 딕셔너리"""
     price_info = None
     if h.stock_meta and h.stock_meta.price_cache:
         pc = h.stock_meta.price_cache
@@ -361,13 +345,13 @@ def _holding_to_out(h: AccountHolding) -> dict[str, Any]:
 
 @app.get("/api/accounts", response_model=list[AccountOut], tags=["계좌"])
 def list_accounts(db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # ← 추가
+    current_user: User = Depends(get_current_user),
 ):
-    """등록된 모든 계좌 목록과 현금 잔고를 반환합니다."""
+    """현재 로그인한 유저의 계좌 목록과 현금 잔고를 반환합니다."""
     accounts = (
         db.query(Account)
         .options(joinedload(Account.cash_balance))
-        .filter(Account.is_active == True)
+        .filter(Account.is_active == True, Account.user_id == current_user.id) # 💡 유저별 필터링 안전장치 추가
         .order_by(Account.created_at)
         .all()
     )
@@ -389,12 +373,15 @@ def list_accounts(db: Session = Depends(get_db),
 
 @app.post("/api/accounts", response_model=AccountOut, status_code=201, tags=["계좌"])
 def create_account(body: AccountCreate, db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # ← 추가
+    current_user: User = Depends(get_current_user),
 ):
-    """새 계좌를 등록합니다. 생성과 동시에 현금 잔고 row(0원)도 함께 생성됩니다."""
-    acc = Account(**body.model_dump())
+    """새 계좌를 등록합니다. 로그인한 유저의 ID와 매핑됩니다."""
+    account_data = body.model_dump()
+    account_data["user_id"] = current_user.id  # 💡 Bug Fix 2: 생성되는 계좌에 로그인한 유저 ID를 강제 매핑
+    
+    acc = Account(**account_data)
     db.add(acc)
-    db.flush()  # id 확보
+    db.flush()
 
     cash = CashBalance(account_id=acc.id, amount=0.0, currency=body.currency)
     db.add(cash)
@@ -415,9 +402,9 @@ def create_account(body: AccountCreate, db: Session = Depends(get_db),
 
 @app.get("/api/accounts/{account_id}", response_model=AccountOut, tags=["계좌"])
 def get_account(account_id: int, db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # ← 추가
+    current_user: User = Depends(get_current_user),
 ):
-    acc = db.query(Account).options(joinedload(Account.cash_balance)).get(account_id)
+    acc = db.query(Account).options(joinedload(Account.cash_balance)).filter(Account.id == account_id, Account.user_id == current_user.id).first()
     if not acc:
         raise HTTPException(status_code=404, detail="계좌를 찾을 수 없습니다.")
     return AccountOut(
@@ -434,10 +421,9 @@ def get_account(account_id: int, db: Session = Depends(get_db),
 
 @app.put("/api/accounts/{account_id}", response_model=AccountOut, tags=["계좌"])
 def update_account(account_id: int, body: AccountUpdate, db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # ← 추가
+    current_user: User = Depends(get_current_user),
 ):
-    """계좌 이름, 설명, 활성 상태를 수정합니다."""
-    acc = db.get(Account, account_id)
+    acc = db.query(Account).filter(Account.id == account_id, Account.user_id == current_user.id).first()
     if not acc:
         raise HTTPException(status_code=404, detail="계좌를 찾을 수 없습니다.")
 
@@ -460,10 +446,9 @@ def update_account(account_id: int, body: AccountUpdate, db: Session = Depends(g
 
 @app.delete("/api/accounts/{account_id}", status_code=204, tags=["계좌"])
 def delete_account(account_id: int, db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # ← 추가
+    current_user: User = Depends(get_current_user),
 ):
-    """계좌를 삭제합니다. 연관된 보유 종목과 매매 기록도 함께 삭제됩니다."""
-    acc = db.get(Account, account_id)
+    acc = db.query(Account).filter(Account.id == account_id, Account.user_id == current_user.id).first()
     if not acc:
         raise HTTPException(status_code=404, detail="계좌를 찾을 수 없습니다.")
     db.delete(acc)
@@ -471,10 +456,9 @@ def delete_account(account_id: int, db: Session = Depends(get_db),
 
 @app.put("/api/accounts/{account_id}/cash", tags=["계좌"])
 def update_cash(account_id: int, body: CashUpdate, db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # ← 추가
+    current_user: User = Depends(get_current_user),
 ):
-    """계좌의 현금 잔고를 업데이트합니다 (직접 입력 방식)."""
-    acc = db.get(Account, account_id)
+    acc = db.query(Account).filter(Account.id == account_id, Account.user_id == current_user.id).first()
     if not acc:
         raise HTTPException(status_code=404, detail="계좌를 찾을 수 없습니다.")
 
@@ -499,7 +483,6 @@ def portfolio_summary(
     account_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    # 환율 가져오기 (USD 기준)
     def get_exchange_rate(currency: str) -> float:
         if currency == "USD":
             return 1.0
@@ -510,11 +493,9 @@ def portfolio_summary(
         except:
             return 1.0
 
-    # 계좌 목록
     accounts = db.query(Account).filter(Account.is_active == True).all()
     account_map = {a.id: a for a in accounts}
 
-    # 환율 캐시 (같은 통화 중복 호출 방지)
     rate_cache: dict[str, float] = {}
     def to_usd(amount: float, currency: str) -> float:
         if currency == "USD":
@@ -523,7 +504,6 @@ def portfolio_summary(
             rate_cache[currency] = get_exchange_rate(currency)
         return amount / rate_cache[currency]
 
-    # 보유 종목 쿼리
     q = db.query(AccountHolding).options(
         joinedload(AccountHolding.stock_meta).joinedload(StockMeta.price_cache)
     )
@@ -531,7 +511,6 @@ def portfolio_summary(
         q = q.filter(AccountHolding.account_id == account_id)
     holdings = q.all()
 
-    # 현금 쿼리
     cash_q = db.query(CashBalance)
     if account_id:
         cash_q = cash_q.filter(CashBalance.account_id == account_id)
@@ -543,10 +522,9 @@ def portfolio_summary(
         if c.account_id in account_map
     )
 
-    # 종목별 평가액 (USD 기준 통일)
     ticker_map: dict[str, dict] = {}
     sector_map: dict[str, float] = {}
-    account_stock_map: dict[str, float] = {}  # 계좌별 주식 평가액
+    account_stock_map: dict[str, float] = {} 
     total_stock_value_usd = 0.0
 
     for h in holdings:
@@ -557,21 +535,17 @@ def portfolio_summary(
         value_usd = to_usd(price * h.quantity, acc_currency)
         total_stock_value_usd += value_usd
 
-        # 종목별
         ticker = h.ticker
         if ticker not in ticker_map:
             ticker_map[ticker] = {"ticker": ticker, "name": h.stock_meta.name if h.stock_meta else ticker, "value": 0.0}
         ticker_map[ticker]["value"] += value_usd
 
-        # 섹터별
         sector = (h.stock_meta.sector if h.stock_meta else None) or "기타"
         sector_map[sector] = sector_map.get(sector, 0.0) + value_usd
 
-        # 계좌별
         acc_name = acc.name if acc else f"계좌 {h.account_id}"
         account_stock_map[acc_name] = account_stock_map.get(acc_name, 0.0) + value_usd
 
-    # 계좌별 현금도 account_map에 합산
     account_total_map: dict[str, float] = dict(account_stock_map)
     for c in cash_rows:
         acc = account_map.get(c.account_id)
@@ -604,7 +578,7 @@ def portfolio_summary(
         "cash_pct": round(total_cash_usd / total_asset_usd * 100, 2) if total_asset_usd else 0.0,
         "sector_weights": sector_weights,
         "ticker_weights": ticker_weights,
-        "account_weights": account_weights,  # 계좌별 비중 추가
+        "account_weights": account_weights,
     }
 
 
@@ -617,14 +591,8 @@ def search_stock(
     q: str = Query(..., min_length=1, description="티커 또는 종목명"),
     db: Session = Depends(get_db),
 ):
-    """
-    티커 또는 종목명으로 종목을 검색합니다.
-    1. DB에 이미 있으면 즉시 반환 (yfinance 미호출)
-    2. 없으면 yfinance Search로 후보 목록 반환
-    """
     q_upper = q.strip().upper()
 
-    # 1) DB 캐시 우선 조회
     cached = db.get(StockMeta, q_upper)
     if cached:
         pc = cached.price_cache
@@ -640,7 +608,6 @@ def search_stock(
             }],
         }
 
-    # 2) yfinance 검색
     try:
         search_result = yf.Search(q, max_results=8)
         quotes = search_result.quotes
@@ -671,7 +638,6 @@ def list_holdings(
     account_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    """보유 종목 목록. account_id로 필터링 가능."""
     q = db.query(AccountHolding).options(
         joinedload(AccountHolding.stock_meta).joinedload(StockMeta.price_cache)
     )
@@ -684,26 +650,18 @@ def list_holdings(
 
 @app.post("/api/holdings", response_model=HoldingOut, status_code=201, tags=["보유 종목"])
 def create_holding(body: HoldingCreate, db: Session = Depends(get_db)):
-    """
-    종목을 계좌에 등록합니다.
-    - StockMeta가 없으면 yfinance에서 자동으로 가져와 저장합니다.
-    - 같은 계좌에 동일 티커가 이미 있으면 가중평균 단가와 수량을 업데이트합니다.
-    """
     acc = db.get(Account, body.account_id)
     if not acc:
         raise HTTPException(status_code=404, detail="계좌를 찾을 수 없습니다.")
 
-    # StockMeta 확보 (없으면 yfinance 호출)
     _fetch_and_save_stock_meta(body.ticker, db)
 
-    # 같은 계좌 + 같은 티커 포지션이 이미 있는지 확인
     existing = (
         db.query(AccountHolding)
         .filter_by(account_id=body.account_id, ticker=body.ticker)
         .first()
     )
     if existing:
-        # 가중평균 단가 업데이트
         total_cost = existing.avg_price * existing.quantity + body.avg_price * body.quantity
         existing.quantity += body.quantity
         existing.avg_price = total_cost / existing.quantity
@@ -711,7 +669,6 @@ def create_holding(body: HoldingCreate, db: Session = Depends(get_db)):
             existing.memo = body.memo
         db.commit()
         db.refresh(existing)
-        # price_cache 재로드
         existing = (
             db.query(AccountHolding)
             .options(joinedload(AccountHolding.stock_meta).joinedload(StockMeta.price_cache))
@@ -752,7 +709,6 @@ def get_holding(holding_id: int, db: Session = Depends(get_db)):
 
 @app.put("/api/holdings/{holding_id}", response_model=HoldingOut, tags=["보유 종목"])
 def update_holding(holding_id: int, body: HoldingUpdate, db: Session = Depends(get_db)):
-    """평균 단가, 수량, 메모를 직접 수정합니다. (매매 기록 없이 수동 보정 시 사용)"""
     h = db.get(AccountHolding, holding_id)
     if not h:
         raise HTTPException(status_code=404, detail="보유 종목을 찾을 수 없습니다.")
@@ -771,7 +727,6 @@ def update_holding(holding_id: int, body: HoldingUpdate, db: Session = Depends(g
 
 @app.delete("/api/holdings/{holding_id}", status_code=204, tags=["보유 종목"])
 def delete_holding(holding_id: int, db: Session = Depends(get_db)):
-    """포지션 및 연관 매매 기록을 모두 삭제합니다."""
     h = db.get(AccountHolding, holding_id)
     if not h:
         raise HTTPException(status_code=404, detail="보유 종목을 찾을 수 없습니다.")
@@ -792,11 +747,6 @@ def list_trades(
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    """
-    매매 히스토리 피드.
-    - account_id, ticker, trade_type으로 필터링 가능
-    - 최신순 정렬, 페이지네이션 지원
-    """
     q = db.query(Trade)
     if account_id:
         q = q.filter(Trade.account_id == account_id)
@@ -818,13 +768,6 @@ def list_trades(
 
 @app.post("/api/trades", response_model=TradeOut, status_code=201, tags=["매매 기록"])
 def create_trade(body: TradeCreate, db: Session = Depends(get_db)):
-    """
-    매매를 기록합니다.
-
-    BUY  → 포지션의 avg_price(가중평균), quantity 업데이트
-    SELL → 실현 손익 자동 계산 후 저장, quantity 차감
-           수량이 0이 되면 포지션은 그대로 유지 (히스토리 보존 목적)
-    """
     holding = db.get(AccountHolding, body.holding_id)
     if not holding:
         raise HTTPException(status_code=404, detail="포지션을 찾을 수 없습니다.")
@@ -844,7 +787,6 @@ def create_trade(body: TradeCreate, db: Session = Depends(get_db)):
                 status_code=400,
                 detail=f"매도 수량({body.quantity})이 보유 수량({holding.quantity})을 초과합니다.",
             )
-        # 실현 손익: (매도가 - 평균단가) × 수량
         realized_pnl = round((body.price - holding.avg_price) * body.quantity, 4)
         holding.quantity -= body.quantity
 
@@ -881,11 +823,6 @@ def get_trade(trade_id: int, db: Session = Depends(get_db)):
 
 @app.delete("/api/trades/{trade_id}", status_code=204, tags=["매매 기록"])
 def delete_trade(trade_id: int, db: Session = Depends(get_db)):
-    """
-    매매 기록을 삭제합니다.
-    주의: 포지션의 avg_price / quantity는 역산하지 않습니다.
-    삭제 후 포지션을 수동으로 보정하려면 PUT /api/holdings/{id}를 사용하세요.
-    """
     t = db.get(Trade, trade_id)
     if not t:
         raise HTTPException(status_code=404, detail="매매 기록을 찾을 수 없습니다.")
@@ -899,16 +836,6 @@ def delete_trade(trade_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/market/sentiment", tags=["시장 심리"])
 def get_market_sentiment(db: Session = Depends(get_db)):
-    """
-    공포/탐욕 지수를 반환합니다.
-    캐시가 1시간 이내라면 DB에서 즉시 반환.
-    만료됐으면 alternative.me API를 호출해 갱신합니다.
-    (실제 갱신은 scheduler.py가 담당 — 이 엔드포인트는 읽기 전용 폴백)
-    """
-    
-    import httpx
-    from datetime import timedelta
-
     CACHE_TTL_MINUTES = 60
 
     row = db.query(MarketSentimentCache).filter_by(indicator_name="fear_and_greed").first()
@@ -926,21 +853,13 @@ def get_market_sentiment(db: Session = Depends(get_db)):
                 "source": "cache",
             }
 
-    # 캐시 만료 → alternative.me 호출
+    # 💡 Bug Fix 3: 중복 호출되던 불필요한 httpx 블록 1개 깔끔하게 정리 제거 완료
     try:
         resp = httpx.get(
             "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
             timeout=8,
         )
-        resp.raise_for_status()
-        raw = resp.json()["fear_and_greed"]
-        value = float(raw["score"])
-        classification = raw["rating"]
-
-        resp = httpx.get("https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
-    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-    timeout=8)
         resp.raise_for_status()
         raw = resp.json()["fear_and_greed"]
         value = float(raw["score"])
