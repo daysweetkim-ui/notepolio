@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #f5f0e8;
+  --bg-card: #ffffff;
+  --bg-input: #ede8df;
+  --border: #ddd8ce;
+  --text-primary: #1a1814;
+  --text-secondary: #6b6560;
+  --text-muted: #a09890;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --green: #16a34a;
+  --green-soft: #dcfce7;
+  --red: #dc2626;
+  --red-soft: #fee2e2;
+}
+
+html, body {
+  min-height: 100vh;
+  background-color: #f5f0e8;
+  color: #1a1814;
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
