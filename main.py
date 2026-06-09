@@ -675,7 +675,7 @@ def list_holdings(
 
 @app.post("/api/holdings", response_model=HoldingOut, status_code=201, tags=["보유 종목"])
 def create_holding(body: HoldingCreate, db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user), # 💡 유저 정보 가져오기 추가
+    current_user: User = Depends(get_current_user),
 ):
     acc = db.get(Account, body.account_id)
     if not acc:
@@ -695,32 +695,41 @@ def create_holding(body: HoldingCreate, db: Session = Depends(get_db),
         if body.memo:
             existing.memo = body.memo
         db.commit()
-        db.refresh(existing)
-        existing = (
-            db.query(AccountHolding)
-            .options(joinedload(AccountHolding.stock_meta).joinedload(StockMeta.price_cache))
-            .get(existing.id)
+        target_holding = existing
+    else:
+        holding = AccountHolding(
+            account_id=body.account_id,
+            ticker=body.ticker,
+            avg_price=body.avg_price,
+            quantity=body.quantity,
+            memo=body.memo,
+            user_id=current_user.id
         )
-        return _holding_to_out(existing)
+        db.add(holding)
+        db.flush()
+        target_holding = holding
 
-    holding = AccountHolding(
+    # 💡 [버그 수정] 보유 종목 추가 시 매매 기록(Trade)도 백엔드에서 1번만 안전하게 동시 생성하여 수량 뻥튀기 방지
+    trade = Trade(
+        holding_id=target_holding.id,
         account_id=body.account_id,
         ticker=body.ticker,
-        avg_price=body.avg_price,
+        trade_type="BUY",
         quantity=body.quantity,
+        price=body.avg_price,
         memo=body.memo,
-        user_id=current_user.id # 💡 해결: 보유 종목에도 주인 이름표(user_id)를 달아줍니다!
+        traded_at=datetime.now(timezone.utc),
+        user_id=current_user.id
     )
-    db.add(holding)
+    db.add(trade)
     db.commit()
-    db.refresh(holding)
 
-    holding = (
+    target_holding = (
         db.query(AccountHolding)
         .options(joinedload(AccountHolding.stock_meta).joinedload(StockMeta.price_cache))
-        .get(holding.id)
+        .get(target_holding.id)
     )
-    return _holding_to_out(holding)
+    return _holding_to_out(target_holding)
 
 
 @app.get("/api/holdings/{holding_id}", response_model=HoldingOut, tags=["보유 종목"])
