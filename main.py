@@ -508,26 +508,30 @@ def portfolio_summary(
     account_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    def get_exchange_rate(currency: str) -> float:
-        if currency == "USD":
-            return 1.0
-        try:
-            ticker = yf.Ticker(f"USD{currency}=X")
-            rate = ticker.fast_info.get("lastPrice")
-            return float(rate) if rate else 1.0
-        except:
-            return 1.0
+    # 1. 실시간 원달러 환율 가져오기 (기본값 1500원)
+    usd_to_krw = 1500.0
+    try:
+        ticker = yf.Ticker("USDKRW=X")
+        rate = ticker.fast_info.get("lastPrice")
+        if rate:
+            usd_to_krw = float(rate)
+    except:
+        pass
+
+    # 2. 통화 변환 헬퍼 (모든 가치를 원화(KRW)로 통일)
+    def to_krw(amount: float, currency: str) -> float:
+        if currency == "KRW":
+            return amount
+        return amount * usd_to_krw
+
+    # 주식 국적 파악 (티커나 거래소 기준)
+    def get_stock_currency(ticker: str, exchange: str | None) -> str:
+        if ticker.endswith(".KS") or ticker.endswith(".KQ") or exchange in ["KOSPI", "KOSDAQ"]:
+            return "KRW"
+        return "USD"
 
     accounts = db.query(Account).filter(Account.is_active == True).all()
     account_map = {a.id: a for a in accounts}
-
-    rate_cache: dict[str, float] = {}
-    def to_usd(amount: float, currency: str) -> float:
-        if currency == "USD":
-            return amount
-        if currency not in rate_cache:
-            rate_cache[currency] = get_exchange_rate(currency)
-        return amount / rate_cache[currency]
 
     q = db.query(AccountHolding).options(
         joinedload(AccountHolding.stock_meta).joinedload(StockMeta.price_cache)
@@ -541,46 +545,63 @@ def portfolio_summary(
         cash_q = cash_q.filter(CashBalance.account_id == account_id)
     cash_rows = cash_q.all()
 
-    total_cash_usd = sum(
-        to_usd(c.amount, account_map[c.account_id].currency)
-        for c in cash_rows
-        if c.account_id in account_map
-    )
+    # 3. 집계용 그릇 준비
+    total_cash_krw = 0.0
+    total_stock_buy_krw = 0.0
+    total_stock_eval_krw = 0.0
 
-    ticker_map: dict[str, dict] = {}
-    sector_map: dict[str, float] = {}
-    account_stock_map: dict[str, float] = {} 
-    total_stock_value_usd = 0.0
+    account_summary = {}
+    for acc in accounts:
+        account_summary[acc.id] = {
+            "id": acc.id,
+            "name": acc.name,
+            "cash": 0.0,
+            "stock_buy": 0.0,
+            "stock_eval": 0.0
+        }
 
+    # 4. 현금 잔고 집계
+    for c in cash_rows:
+        if c.account_id in account_map:
+            acc = account_map[c.account_id]
+            krw_val = to_krw(c.amount, acc.currency)
+            total_cash_krw += krw_val
+            account_summary[acc.id]["cash"] += krw_val
+
+    ticker_map = {}
+    sector_map = {}
+
+    # 5. 보유 종목 집계 (매입가 vs 현재가)
     for h in holdings:
         pc = h.stock_meta.price_cache if h.stock_meta else None
-        price = pc.current_price if pc and pc.current_price else h.avg_price
-        acc = account_map.get(h.account_id)
-        acc_currency = acc.currency if acc else "USD"
-        value_usd = to_usd(price * h.quantity, acc_currency)
-        total_stock_value_usd += value_usd
+        exchange = h.stock_meta.exchange if h.stock_meta else None
+        stock_currency = get_stock_currency(h.ticker, exchange)
+
+        buy_price = h.avg_price
+        current_price = pc.current_price if pc and pc.current_price else h.avg_price
+        qty = h.quantity
+
+        buy_val_krw = to_krw(buy_price * qty, stock_currency)
+        eval_val_krw = to_krw(current_price * qty, stock_currency)
+
+        total_stock_buy_krw += buy_val_krw
+        total_stock_eval_krw += eval_val_krw
+
+        if h.account_id in account_summary:
+            account_summary[h.account_id]["stock_buy"] += buy_val_krw
+            account_summary[h.account_id]["stock_eval"] += eval_val_krw
 
         ticker = h.ticker
         if ticker not in ticker_map:
             ticker_map[ticker] = {"ticker": ticker, "name": h.stock_meta.name if h.stock_meta else ticker, "value": 0.0}
-        ticker_map[ticker]["value"] += value_usd
+        ticker_map[ticker]["value"] += eval_val_krw
 
         sector = (h.stock_meta.sector if h.stock_meta else None) or "기타"
-        sector_map[sector] = sector_map.get(sector, 0.0) + value_usd
+        sector_map[sector] = sector_map.get(sector, 0.0) + eval_val_krw
 
-        acc_name = acc.name if acc else f"계좌 {h.account_id}"
-        account_stock_map[acc_name] = account_stock_map.get(acc_name, 0.0) + value_usd
-
-    account_total_map: dict[str, float] = dict(account_stock_map)
-    for c in cash_rows:
-        acc = account_map.get(c.account_id)
-        if not acc:
-            continue
-        acc_name = acc.name
-        val = to_usd(c.amount, acc.currency)
-        account_total_map[acc_name] = account_total_map.get(acc_name, 0.0) + val
-
-    total_asset_usd = total_stock_value_usd + total_cash_usd
+    # 6. 최종 총합 계산
+    total_asset_krw = total_stock_eval_krw + total_cash_krw
+    total_investment_krw = total_stock_buy_krw + total_cash_krw
 
     def with_pct(items: list[dict], value_key: str) -> list[dict]:
         total = sum(i[value_key] for i in items)
@@ -589,21 +610,21 @@ def portfolio_summary(
         return sorted(items, key=lambda x: x[value_key], reverse=True)
 
     ticker_weights = with_pct(list(ticker_map.values()), "value")
-    sector_weights = with_pct(
-        [{"sector": k, "value": v} for k, v in sector_map.items()], "value"
-    )
-    account_weights = with_pct(
-        [{"sector": k, "value": v} for k, v in account_total_map.items()], "value"
-    )
+    sector_weights = with_pct([{"sector": k, "value": v} for k, v in sector_map.items()], "value")
+    account_weights = with_pct([{"sector": v["name"], "value": v["stock_eval"] + v["cash"]} for v in account_summary.values()], "value")
 
     return {
-        "total_asset": round(total_asset_usd, 2),
-        "total_stock_value": round(total_stock_value_usd, 2),
-        "total_cash": round(total_cash_usd, 2),
-        "cash_pct": round(total_cash_usd / total_asset_usd * 100, 2) if total_asset_usd else 0.0,
+        "total_asset": round(total_asset_krw, 2),          # 전체 현재가(평가액) 합계
+        "total_investment": round(total_investment_krw, 2),# 전체 매입 기준 합계
+        "total_stock_value": round(total_stock_eval_krw, 2),
+        "total_stock_buy": round(total_stock_buy_krw, 2),
+        "total_cash": round(total_cash_krw, 2),
+        "cash_pct": round(total_cash_krw / total_asset_krw * 100, 2) if total_asset_krw else 0.0,
         "sector_weights": sector_weights,
         "ticker_weights": ticker_weights,
         "account_weights": account_weights,
+        "accounts_summary": list(account_summary.values()), # 계좌별 매입/현재가 상세 데이터
+        "exchange_rate": usd_to_krw
     }
 
 
