@@ -376,10 +376,11 @@ def create_account(body: AccountCreate, db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """새 계좌를 등록합니다. 로그인한 유저의 ID와 매핑됩니다."""
-    account_data = body.model_dump()
-    account_data["user_id"] = current_user.id  # 💡 Bug Fix 2: 생성되는 계좌에 로그인한 유저 ID를 강제 매핑
+    acc = Account(**body.model_dump())
     
-    acc = Account(**account_data)
+    # 💡 해결 방법: 데이터베이스에 들어가기 직전에 주인의 이름표(user_id)를 가장 확실하게 강제로 꽂아 넣습니다!
+    acc.user_id = current_user.id  
+    
     db.add(acc)
     db.flush()
 
@@ -393,7 +394,7 @@ def create_account(body: AccountCreate, db: Session = Depends(get_db),
         name=acc.name,
         account_type=acc.account_type,
         currency=acc.currency,
-        description=acc.description,
+        description=body.description,
         is_active=acc.is_active,
         created_at=acc.created_at,
         cash_amount=0.0,
