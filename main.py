@@ -378,13 +378,19 @@ def create_account(body: AccountCreate, db: Session = Depends(get_db),
     """새 계좌를 등록합니다. 로그인한 유저의 ID와 매핑됩니다."""
     acc = Account(**body.model_dump())
     
-    # 💡 해결 방법: 데이터베이스에 들어가기 직전에 주인의 이름표(user_id)를 가장 확실하게 강제로 꽂아 넣습니다!
+    # 💡 1차 방어: 계좌에 주인 이름표 달기
     acc.user_id = current_user.id  
     
     db.add(acc)
     db.flush()
 
-    cash = CashBalance(account_id=acc.id, amount=0.0, currency=body.currency)
+    # 💡 2차 방어: 현금 잔고에도 주인 이름표(user_id)를 달아줍니다!
+    cash = CashBalance(
+        account_id=acc.id, 
+        amount=0.0, 
+        currency=body.currency,
+        user_id=current_user.id  # <-- 이 녀석이 범인이었습니다!
+    )
     db.add(cash)
     db.commit()
     db.refresh(acc)
