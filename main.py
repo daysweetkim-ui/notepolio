@@ -122,6 +122,7 @@ class AccountUpdate(BaseModel):
     account_type: str | None = Field(default=None, max_length=50)
     description: str | None = None
     is_active: bool | None = None
+    initial_cash: float | None = Field(default=None, ge=0)  # 💡 해결: 수정 시 초기 잔고를 받을 수 있도록 필드 추가
 
 
 class CashUpdate(BaseModel):
@@ -430,16 +431,33 @@ def get_account(account_id: int, db: Session = Depends(get_db),
 def update_account(account_id: int, body: AccountUpdate, db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """계좌 정보(이름, 유형 등)와 현금 잔고를 함께 수정합니다."""
     acc = db.query(Account).filter(Account.id == account_id, Account.user_id == current_user.id).first()
     if not acc:
         raise HTTPException(status_code=404, detail="계좌를 찾을 수 없습니다.")
 
-    for field, value in body.model_dump(exclude_none=True).items():
+    # 1) 계좌 기본 정보 업데이트 (initial_cash는 제외하고 처리)
+    update_data = body.model_dump(exclude_none=True)
+    initial_cash = update_data.pop("initial_cash", None)
+
+    for field, value in update_data.items():
         setattr(acc, field, value)
+
+    # 2) 💡 해결: initial_cash 값이 들어왔다면 현금 잔고(CashBalance) 테이블도 함께 찾아서 수정합니다!
+    if initial_cash is not None:
+        cash = db.query(CashBalance).filter_by(account_id=account_id).first()
+        if cash:
+            cash.amount = initial_cash
+        else:
+            # 혹시 잔고 row가 없었다면 새로 생성해 줍니다.
+            cash = CashBalance(account_id=account_id, amount=initial_cash, currency=acc.currency, user_id=current_user.id)
+            db.add(cash)
 
     db.commit()
     db.refresh(acc)
-    cash = acc.cash_balance.amount if acc.cash_balance else 0.0
+    
+    # 최종 변경된 잔고 반영
+    cash_amount = acc.cash_balance.amount if acc.cash_balance else 0.0
     return AccountOut(
         id=acc.id,
         name=acc.name,
@@ -448,7 +466,7 @@ def update_account(account_id: int, body: AccountUpdate, db: Session = Depends(g
         description=acc.description,
         is_active=acc.is_active,
         created_at=acc.created_at,
-        cash_amount=cash,
+        cash_amount=cash_amount,
     )
 
 @app.delete("/api/accounts/{account_id}", status_code=204, tags=["계좌"])
@@ -656,7 +674,9 @@ def list_holdings(
 
 
 @app.post("/api/holdings", response_model=HoldingOut, status_code=201, tags=["보유 종목"])
-def create_holding(body: HoldingCreate, db: Session = Depends(get_db)):
+def create_holding(body: HoldingCreate, db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user), # 💡 유저 정보 가져오기 추가
+):
     acc = db.get(Account, body.account_id)
     if not acc:
         raise HTTPException(status_code=404, detail="계좌를 찾을 수 없습니다.")
@@ -689,6 +709,7 @@ def create_holding(body: HoldingCreate, db: Session = Depends(get_db)):
         avg_price=body.avg_price,
         quantity=body.quantity,
         memo=body.memo,
+        user_id=current_user.id # 💡 해결: 보유 종목에도 주인 이름표(user_id)를 달아줍니다!
     )
     db.add(holding)
     db.commit()
@@ -774,7 +795,9 @@ def list_trades(
 
 
 @app.post("/api/trades", response_model=TradeOut, status_code=201, tags=["매매 기록"])
-def create_trade(body: TradeCreate, db: Session = Depends(get_db)):
+def create_trade(body: TradeCreate, db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user), # 💡 유저 정보 가져오기 추가
+):
     holding = db.get(AccountHolding, body.holding_id)
     if not holding:
         raise HTTPException(status_code=404, detail="포지션을 찾을 수 없습니다.")
@@ -808,6 +831,7 @@ def create_trade(body: TradeCreate, db: Session = Depends(get_db)):
         memo=body.memo,
         tags=json.dumps(body.tags, ensure_ascii=False) if body.tags else None,
         traded_at=body.traded_at,
+        user_id=current_user.id # 💡 해결: 매매 기록에도 주인 이름표(user_id)를 달아줍니다!
     )
     db.add(trade)
     db.commit()
