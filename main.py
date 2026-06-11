@@ -104,6 +104,21 @@ def login_with_invite_code(body: InviteCodeRequest, db: Session = Depends(get_db
 def get_me(current_user: User = Depends(get_current_user)):
     return {"id": current_user.id, "name": current_user.name}
 
+import secrets
+
+@app.get("/api/hidden/create_user/{user_name}", tags=["비밀 API"])
+def create_secret_user(user_name: str, db: Session = Depends(get_db)):
+    """인터넷 주소창에서 바로 초대코드를 생성하는 비밀 API"""
+    new_code = secrets.token_hex(4)
+    user = User(name=user_name, invite_code=new_code, is_active=True)
+    db.add(user)
+    db.commit()
+    return {
+        "message": f"성공! '{user_name}'님의 계정이 라이브 서버에 생성되었습니다.",
+        "invite_code": new_code,
+        "name": user_name
+    }
+
 
 class AccountCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
