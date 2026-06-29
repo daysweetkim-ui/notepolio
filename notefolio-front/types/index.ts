@@ -21,13 +21,25 @@ export interface TickerWeight {
 }
 
 export interface PortfolioSummary {
-  total_asset: number
-  total_stock_value: number
-  total_cash: number
-  cash_pct: number
-  sector_weights: SectorWeight[]
-  ticker_weights: TickerWeight[]
-  account_weights: SectorWeight[]
+  total_asset: number;
+  total_stock_value: number;
+  total_cash: number;
+  cash_pct: number;
+  sector_weights: any[];
+  ticker_weights: any[];
+  account_weights: any[];
+  
+  // 💡 아래부터 이번에 백엔드에서 새롭게 받아오도록 추가된 데이터들입니다!
+  total_investment: number;  
+  total_stock_buy: number;
+  exchange_rate: number;
+  accounts_summary: {
+    id: number;
+    name: string;
+    cash: number;
+    stock_buy: number;
+    stock_eval: number;
+  }[];
 }
 
 export interface MarketSentiment {

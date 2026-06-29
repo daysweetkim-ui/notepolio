@@ -111,3 +111,7 @@ export const updateCash = async (
 ): Promise<void> => {
   await api.put(`/api/accounts/${accountId}/cash`, body)
 }
+
+export const deleteTrade = async (id: number): Promise<void> => {
+  await api.delete(`/api/trades/${id}`)
+}
