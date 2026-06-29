@@ -33,6 +33,40 @@ from scheduler import start_scheduler, stop_scheduler
 from auth import create_access_token, get_current_user
 from database import User
 
+# ========================================================
+# 💡 1. FastAPI 앱 생성 및 수명주기(Lifespan) 설정
+# ========================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()  # 데이터베이스 초기화
+    start_scheduler()  # 스케줄러 시작
+    yield
+    stop_scheduler()  # 스케줄러 종료
+
+app = FastAPI(lifespan=lifespan)
+
+# ========================================================
+# 💡 2. CORS (출입 허용 명단) 설정 (Vercel 도메인 추가 완료!)
+# ========================================================
+origins = [
+    "http://localhost:3000",
+    "https://notepolio.vercel.app",
+    "https://notepolio-svp6.vercel.app"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ========================================================
+# 👇 이 아래부터는 기존에 작성하신 데이터 모델(class ...)과 
+# API 라우터(@app.get, @app.post 등)들을 원래대로 유지하시면 됩니다!
+# ========================================================
+
 # ─────────────────────────────────────────────
 # 로거
 # ─────────────────────────────────────────────
