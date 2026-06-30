@@ -5,6 +5,7 @@ Notefolio FastAPI 애플리케이션 진입점 및 전체 라우터 정의
 
 import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -27,29 +28,44 @@ from database import (
     Trade,
     get_db,
     init_db,
+    User
 )
 from scheduler import start_scheduler, stop_scheduler
-
 from auth import create_access_token, get_current_user
-from database import User
 
-# ========================================================
-# 💡 1. FastAPI 앱 생성 및 수명주기(Lifespan) 설정
-# ========================================================
+# ─────────────────────────────────────────────
+# 로거 설정
+# ─────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("notefolio")
+
+# ─────────────────────────────────────────────
+# 💡 앱 생명주기 및 1개의 완벽한 FastAPI 인스턴스
+# ─────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()  # 데이터베이스 초기화
-    start_scheduler()  # 스케줄러 시작
+    logger.info("DB 초기화 중...")
+    init_db()
+    logger.info("DB 초기화 완료")
+    start_scheduler()
     yield
-    stop_scheduler()  # 스케줄러 종료
+    stop_scheduler()
+    logger.info("서버 종료")
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="Notefolio API",
+    description="개인 투자자를 위한 자산 관리 API",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
-# ========================================================
-# 💡 2. CORS (출입 허용 명단) 설정 (Vercel 도메인 추가 완료!)
-# ========================================================
+# 💡 완벽하게 통합된 CORS 출입 명단 (도플갱어 제거 완료!)
 origins = [
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
     "https://notepolio.vercel.app",
     "https://notepolio-svp6.vercel.app"
 ]
@@ -62,56 +78,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ========================================================
-# 👇 이 아래부터는 기존에 작성하신 데이터 모델(class ...)과 
-# API 라우터(@app.get, @app.post 등)들을 원래대로 유지하시면 됩니다!
-# ========================================================
-
-# ─────────────────────────────────────────────
-# 로거
-# ─────────────────────────────────────────────
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger("notefolio")
-
-
-# ─────────────────────────────────────────────
-# 앱 생명주기
-# ─────────────────────────────────────────────
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("DB 초기화 중...")
-    init_db()
-    logger.info("DB 초기화 완료")
-    start_scheduler()
-    yield
-    stop_scheduler()
-    logger.info("서버 종료")
-
-
-app = FastAPI(
-    title="Notefolio API",
-    description="개인 투자자를 위한 자산 관리 API",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-# 💡 CORS 설정 (localhost 및 127.0.0.1 모두 허용)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],  
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 # ─────────────────────────────────────────────
 # Pydantic 스키마
@@ -119,40 +85,6 @@ app.add_middleware(
 
 class InviteCodeRequest(BaseModel):
     invite_code: str
-
-@app.post("/api/auth/login", tags=["인증"])
-def login_with_invite_code(body: InviteCodeRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter_by(invite_code=body.invite_code, is_active=True).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="유효하지 않은 초대 코드입니다.")
-
-    token = create_access_token(user.id, user.name)
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user_id": user.id,
-        "name": user.name,
-    }
-
-@app.get("/api/auth/me", tags=["인증"])
-def get_me(current_user: User = Depends(get_current_user)):
-    return {"id": current_user.id, "name": current_user.name}
-
-import secrets
-
-@app.get("/api/hidden/create_user/{user_name}", tags=["비밀 API"])
-def create_secret_user(user_name: str, db: Session = Depends(get_db)):
-    """인터넷 주소창에서 바로 초대코드를 생성하는 비밀 API"""
-    new_code = secrets.token_hex(4)
-    user = User(name=user_name, invite_code=new_code, is_active=True)
-    db.add(user)
-    db.commit()
-    return {
-        "message": f"성공! '{user_name}'님의 계정이 라이브 서버에 생성되었습니다.",
-        "invite_code": new_code,
-        "name": user_name
-    }
-
 
 class AccountCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
@@ -283,11 +215,10 @@ class TradeOut(BaseModel):
 
 
 # ─────────────────────────────────────────────
-# 내부 헬퍼 로직 (환율 적용)
+# 헬퍼 함수
 # ─────────────────────────────────────────────
 
 def _get_usd_to_krw():
-    """실시간 원달러 환율 가져오기 (실패 시 1400원 고정)"""
     try:
         ticker = yf.Ticker("USDKRW=X")
         rate = ticker.fast_info.get("lastPrice")
@@ -349,7 +280,6 @@ def _fetch_and_save_stock_meta(ticker: str, db: Session) -> StockMeta:
     return meta
 
 def _holding_to_out(h: AccountHolding, usd_to_krw: float) -> HoldingOut:
-    """Holding 정보를 내보낼 때, 미국 주식이면 현재가(달러)에 환율을 곱해 원화로 변환합니다."""
     price_info = None
     if h.stock_meta and h.stock_meta.price_cache:
         pc = h.stock_meta.price_cache
@@ -388,6 +318,41 @@ def _holding_to_out(h: AccountHolding, usd_to_krw: float) -> HoldingOut:
         exchange=h.stock_meta.exchange if h.stock_meta else None,
         price_info=price_info,
     )
+
+
+# ─────────────────────────────────────────────
+# 라우터: 인증 (Auth & Users)
+# ─────────────────────────────────────────────
+
+@app.post("/api/auth/login", tags=["인증"])
+def login_with_invite_code(body: InviteCodeRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter_by(invite_code=body.invite_code, is_active=True).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="유효하지 않은 초대 코드입니다.")
+
+    token = create_access_token(user.id, user.name)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "name": user.name,
+    }
+
+@app.get("/api/auth/me", tags=["인증"])
+def get_me(current_user: User = Depends(get_current_user)):
+    return {"id": current_user.id, "name": current_user.name}
+
+@app.get("/api/hidden/create_user/{user_name}", tags=["비밀 API"])
+def create_secret_user(user_name: str, db: Session = Depends(get_db)):
+    new_code = secrets.token_hex(4)
+    user = User(name=user_name, invite_code=new_code, is_active=True)
+    db.add(user)
+    db.commit()
+    return {
+        "message": f"성공! '{user_name}'님의 계정이 라이브 서버에 생성되었습니다.",
+        "invite_code": new_code,
+        "name": user_name
+    }
 
 
 # ─────────────────────────────────────────────
@@ -737,7 +702,6 @@ def create_holding(body: HoldingCreate, db: Session = Depends(get_db),
         db.flush()
         target_holding = holding
 
-    # 보유 종목 추가 시 매매 기록(Trade) 1번만 안전하게 동시 생성
     trade = Trade(
         holding_id=target_holding.id,
         account_id=body.account_id,
