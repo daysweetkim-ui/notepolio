@@ -21,10 +21,7 @@ function AccountForm({
 }) {
   const [name, setName]               = useState(initial?.name ?? "")
   const [accountType, setAccountType] = useState(initial?.account_type ?? "주식")
-  
-  // 💡 해결: 통화 드롭다운을 없애고 내부 변수를 "KRW"로 강제 고정합니다.
   const currency = "KRW"
-
   const isEdit = !!initial?.id
   const [initialCash, setInitialCash] = useState(initial?.cash_amount ? initial.cash_amount.toString() : "")
 
@@ -32,63 +29,22 @@ function AccountForm({
     <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 shadow-sm">
       <div>
         <label className="text-xs font-bold text-slate-600 mb-1.5 block">계좌명 *</label>
-        <input
-          className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-slate-400"
-          placeholder="예: 미국주식 계좌, 연금 IRP"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
+        <input className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-slate-400" placeholder="예: 미국주식 계좌, 연금 IRP" value={name} onChange={(e) => setName(e.target.value)} />
       </div>
-
       <div>
         <label className="text-xs font-bold text-slate-600 mb-1.5 block">계좌 유형 *</label>
-        <select
-          className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer"
-          value={accountType}
-          onChange={(e) => setAccountType(e.target.value)}
-        >
-          {ACCOUNT_TYPES.map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
+        <select className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer" value={accountType} onChange={(e) => setAccountType(e.target.value)}>
+          {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
-
       <div>
          <label className="text-xs font-bold text-slate-600 mb-1.5 block">초기 잔고 (원화 ₩)</label>
-          <input
-            type="text"
-            inputMode="decimal"
-            className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-slate-400"
-            placeholder="0"
-            value={initialCash ? Number(initialCash.replace(/,/g, "")).toLocaleString() : ""}
-            onChange={(e) => {
-              const raw = e.target.value.replace(/,/g, "")
-              if (!isNaN(Number(raw))) setInitialCash(raw)
-            }}
-         />
+          <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-slate-400" placeholder="0" value={initialCash ? Number(initialCash.replace(/,/g, "")).toLocaleString() : ""} onChange={(e) => { const raw = e.target.value.replace(/,/g, ""); if (!isNaN(Number(raw))) setInitialCash(raw) }} />
        </div>
-
       <div className="flex gap-2 pt-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex-1 py-2.5 rounded-xl bg-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-300"
-        >
-          취소
-        </button>
-        <button
-          type="button"
-          onClick={() => onSubmit({ 
-            name, 
-            account_type: accountType, 
-            currency, 
-            initial_cash: initialCash ? parseFloat(initialCash.replace(/,/g, "")) : 0 
-          })}
-          disabled={!name.trim() || isPending}
-          className="flex-1 py-2.5 rounded-xl bg-violet-500 hover:bg-violet-600 text-white text-sm font-bold transition-colors flex items-center justify-center gap-1.5 shadow-md"
-        >
-          <Check size={16} />
-          {isPending ? "저장 중..." : isEdit ? "수정 완료" : "계좌 등록"}
+        <button type="button" onClick={onCancel} className="flex-1 py-2.5 rounded-xl bg-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-300">취소</button>
+        <button type="button" onClick={() => onSubmit({ name, account_type: accountType, currency, initial_cash: initialCash ? parseFloat(initialCash.replace(/,/g, "")) : 0 })} disabled={!name.trim() || isPending} className="flex-1 py-2.5 rounded-xl bg-violet-500 hover:bg-violet-600 text-white text-sm font-bold transition-colors flex items-center justify-center gap-1.5 shadow-md">
+          <Check size={16} /> {isPending ? "저장 중..." : isEdit ? "수정 완료" : "계좌 등록"}
         </button>
       </div>
     </div>
@@ -101,10 +57,7 @@ export default function AccountModal({ onClose }: { onClose: () => void }) {
   const [editTarget, setEditTarget] = useState<Account | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
 
-  const { data: accounts = [] } = useQuery({
-    queryKey: ["accounts"],
-    queryFn: fetchAccounts,
-  })
+  const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: fetchAccounts })
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["accounts"] })
@@ -115,23 +68,17 @@ export default function AccountModal({ onClose }: { onClose: () => void }) {
     mutationFn: async (data: { name: string; account_type: string; currency: string; initial_cash: number }) => {
       const { initial_cash, ...body } = data
       const account = await createAccount(body)
-      if (initial_cash > 0) {
-        await updateCash(account.id, { amount: initial_cash, currency: body.currency })
-      }
+      if (initial_cash > 0) { await updateCash(account.id, { amount: initial_cash, currency: body.currency }) }
       return account
     },
     onSuccess: () => { invalidate(); setMode("list") },
-    onError: (err: any) => {
-      alert(`계좌 등록 실패: ${err.response?.data?.detail || err.message}`)
-    }
+    onError: (err: any) => alert(`계좌 등록 실패: ${err.response?.data?.detail || err.message}`)
   })
 
   const { mutate: editAccount, isPending: editPending } = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<Account> }) => updateAccount(id, data),
     onSuccess: () => { invalidate(); setMode("list"); setEditTarget(null) },
-    onError: (err: any) => {
-      alert(`계좌 수정 실패: ${err.response?.data?.detail || err.message}`)
-    }
+    onError: (err: any) => alert(`계좌 수정 실패: ${err.response?.data?.detail || err.message}`)
   })
 
   const { mutate: removeAccount } = useMutation({
@@ -140,25 +87,18 @@ export default function AccountModal({ onClose }: { onClose: () => void }) {
   })
 
   return (
-    // 💡 화면 밑으로 깔리던 증상을 없애고, 중앙 정렬(items-center)과 여백(p-4) 추가
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      
-      {/* 💡 기기 높이가 작아도 스크롤(overflow-y-auto, max-h-[85vh])이 가능하게끔 안전 장치 적용 */}
       <div className="relative w-full max-w-lg bg-white text-slate-900 rounded-3xl p-5 sm:p-6 max-h-[85vh] overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-black text-slate-900">계좌 관리</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-slate-100 p-1.5 rounded-full">
-            <X size={20} />
-          </button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-slate-100 p-1.5 rounded-full"><X size={20} /></button>
         </div>
 
         {mode === "list" && (
           <div className="space-y-3">
             {accounts.length === 0 ? (
-              <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100 mt-2">
-                <p className="text-slate-500 font-medium text-sm">등록된 계좌가 없습니다</p>
-              </div>
+              <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100 mt-2"><p className="text-slate-500 font-medium text-sm">등록된 계좌가 없습니다</p></div>
             ) : (
               accounts.map((acc) => (
                 <div key={acc.id} className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 flex items-center justify-between shadow-sm">

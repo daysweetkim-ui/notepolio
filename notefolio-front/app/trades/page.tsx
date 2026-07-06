@@ -9,8 +9,6 @@ import {
   ChevronDown, ChevronUp, History, Banknote, DollarSign
 } from "lucide-react"
 
-// ── 헬퍼 ────────────────────────────────────────────────
-
 function fmtDate(iso: string) {
   const d = new Date(iso)
   return d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" })
@@ -25,8 +23,6 @@ function fmtPrice(v: number, displayCurrency: "KRW" | "USD", exchangeRate = 1400
   return "$" + (v / exchangeRate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-// ── 매매 카드 ────────────────────────────────────────────
-
 function TradeCard({ trade, displayCurrency, exchangeRate }: { trade: TradeOut, displayCurrency: "KRW" | "USD", exchangeRate: number }) {
   const [expanded, setExpanded] = useState(false)
   const isBuy = trade.trade_type === "BUY"
@@ -34,28 +30,15 @@ function TradeCard({ trade, displayCurrency, exchangeRate }: { trade: TradeOut, 
 
   return (
     <div className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden mb-3">
-      <div
-        className="flex items-center justify-between p-4 cursor-pointer"
-        onClick={() => setExpanded(!expanded)}
-      >
+      <div className="flex items-center justify-between p-4 cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <div className="flex items-center gap-3 overflow-hidden flex-1">
-          <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${
-            isBuy ? "bg-emerald-50" : "bg-red-50"
-          }`}>
-            {isBuy
-              ? <TrendingUp size={18} className="text-emerald-500" />
-              : <TrendingDown size={18} className="text-red-500" />
-            }
+          <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${isBuy ? "bg-emerald-50" : "bg-red-50"}`}>
+            {isBuy ? <TrendingUp size={18} className="text-emerald-500" /> : <TrendingDown size={18} className="text-red-500" />}
           </div>
-
           <div className="flex-1 min-w-0 pr-2">
             <div className="flex items-center gap-2">
               <span className="font-bold text-sm text-slate-900 truncate">{trade.ticker}</span>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${
-                isBuy
-                  ? "bg-emerald-50 text-emerald-600"
-                  : "bg-red-50 text-red-600"
-              }`}>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${isBuy ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
                 {isBuy ? "매수" : "매도"}
               </span>
             </div>
@@ -71,9 +54,7 @@ function TradeCard({ trade, displayCurrency, exchangeRate }: { trade: TradeOut, 
               {fmtPrice(totalAmount, displayCurrency, exchangeRate)}
             </p>
             {trade.realized_pnl != null && (
-              <p className={`text-[10px] font-bold mt-0.5 truncate max-w-[90px] ${
-                trade.realized_pnl >= 0 ? "text-emerald-600" : "text-red-500"
-              }`}>
+              <p className={`text-[10px] font-bold mt-0.5 truncate max-w-[90px] ${trade.realized_pnl >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                 {trade.realized_pnl >= 0 ? "+" : ""}{fmtPrice(trade.realized_pnl, displayCurrency, exchangeRate)}
               </p>
             )}
@@ -100,15 +81,9 @@ function TradeCard({ trade, displayCurrency, exchangeRate }: { trade: TradeOut, 
           </div>
 
           {trade.realized_pnl != null && (
-            <div className={`rounded-xl px-4 py-2.5 flex items-center justify-between border ${
-              trade.realized_pnl >= 0
-                ? "bg-emerald-50 border-emerald-100"
-                : "bg-red-50 border-red-100"
-            }`}>
+            <div className={`rounded-xl px-4 py-2.5 flex items-center justify-between border ${trade.realized_pnl >= 0 ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100"}`}>
               <span className="text-[11px] font-bold text-slate-500">실현 손익</span>
-              <span className={`text-xs font-black truncate ${
-                trade.realized_pnl >= 0 ? "text-emerald-600" : "text-red-600"
-              }`}>
+              <span className={`text-xs font-black truncate ${trade.realized_pnl >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                 {trade.realized_pnl >= 0 ? "+" : ""}{fmtPrice(trade.realized_pnl, displayCurrency, exchangeRate)}
               </span>
             </div>
@@ -116,12 +91,9 @@ function TradeCard({ trade, displayCurrency, exchangeRate }: { trade: TradeOut, 
 
           {trade.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {/* 💡 타입 에러 해결: (tag: string) 추가 */}
+              {/* 타입 에러 해결: tag: string */}
               {trade.tags.map((tag: string) => (
-                <span
-                  key={tag}
-                  className="text-[10px] bg-violet-50 text-violet-600 border border-violet-100 px-2 py-1 rounded-md font-bold"
-                >
+                <span key={tag} className="text-[10px] bg-violet-50 text-violet-600 border border-violet-100 px-2 py-1 rounded-md font-bold">
                   {tag}
                 </span>
               ))}
@@ -159,7 +131,6 @@ export default function TradesPage() {
   const [page, setPage] = useState(0)
   const LIMIT = 30
 
-  // 💡 타입 에러 해결: <Account[]> 추가
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ["accounts"],
     queryFn: fetchAccounts,
@@ -173,13 +144,7 @@ export default function TradesPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["trades", filterAccountId, filterType, page],
-    queryFn: () =>
-      fetchTrades({
-        accountId: filterAccountId,
-        tradeType: filterType === "ALL" ? null : filterType,
-        limit: LIMIT,
-        offset: page * LIMIT,
-      }),
+    queryFn: () => fetchTrades({ accountId: filterAccountId, tradeType: filterType === "ALL" ? null : filterType, limit: LIMIT, offset: page * LIMIT }),
   })
 
   const trades: TradeOut[] = data?.items ?? []
@@ -192,30 +157,18 @@ export default function TradesPage() {
     return acc
   }, {})
 
-  const totalPnl = trades
-    .filter((t) => t.realized_pnl != null)
-    .reduce((sum, t) => sum + (t.realized_pnl ?? 0), 0)
+  const totalPnl = trades.filter((t) => t.realized_pnl != null).reduce((sum, t) => sum + (t.realized_pnl ?? 0), 0)
 
   return (
     <main className="max-w-lg mx-auto px-4 pt-6 pb-24">
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-xl font-bold text-slate-800 tracking-tight">매매 히스토리</h1>
         <div className="flex gap-2">
-          <button
-            onClick={() => setDisplayCurrency(displayCurrency === "KRW" ? "USD" : "KRW")}
-            className="flex items-center gap-1 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-500 shadow-sm shrink-0"
-          >
+          <button onClick={() => setDisplayCurrency(displayCurrency === "KRW" ? "USD" : "KRW")} className="flex items-center gap-1 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-500 shadow-sm shrink-0">
             {displayCurrency === "KRW" ? <Banknote size={14} /> : <DollarSign size={14} />}
             <span className="hidden sm:inline">{displayCurrency === "KRW" ? "원화" : "달러"}</span>
           </button>
-          <button
-            onClick={() => setShowFilter(!showFilter)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
-              showFilter || filterAccountId || filterType !== "ALL"
-                ? "bg-violet-600 text-white shadow-sm"
-                : "bg-white border border-slate-200 text-slate-600 shadow-sm"
-            }`}
-          >
+          <button onClick={() => setShowFilter(!showFilter)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${showFilter || filterAccountId || filterType !== "ALL" ? "bg-violet-600 text-white shadow-sm" : "bg-white border border-slate-200 text-slate-600 shadow-sm"}`}>
             <SlidersHorizontal size={14} /> 필터
           </button>
         </div>
@@ -227,44 +180,18 @@ export default function TradesPage() {
             <p className="text-[10px] font-bold text-slate-400 mb-2">거래 유형</p>
             <div className="flex gap-2">
               {(["ALL", "BUY", "SELL"] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => { setFilterType(type); setPage(0) }}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                    filterType === type
-                      ? "bg-violet-600 text-white"
-                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                  }`}
-                >
+                <button key={type} onClick={() => { setFilterType(type); setPage(0) }} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${filterType === type ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
                   {type === "ALL" ? "전체" : type === "BUY" ? "매수" : "매도"}
                 </button>
               ))}
             </div>
           </div>
-
           <div>
             <p className="text-[10px] font-bold text-slate-400 mb-2">계좌</p>
             <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => { setFilterAccountId(null); setPage(0) }}
-                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                  filterAccountId === null
-                    ? "bg-violet-600 text-white"
-                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                }`}
-              >
-                전체
-              </button>
+              <button onClick={() => { setFilterAccountId(null); setPage(0) }} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${filterAccountId === null ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>전체</button>
               {accounts.map((acc) => (
-                <button
-                  key={acc.id}
-                  onClick={() => { setFilterAccountId(acc.id); setPage(0) }}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                    filterAccountId === acc.id
-                      ? "bg-violet-600 text-white"
-                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                  }`}
-                >
+                <button key={acc.id} onClick={() => { setFilterAccountId(acc.id); setPage(0) }} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${filterAccountId === acc.id ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
                   {acc.name}
                 </button>
               ))}
@@ -288,11 +215,7 @@ export default function TradesPage() {
       )}
 
       {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-20 bg-white border border-slate-100 rounded-2xl animate-pulse shadow-sm" />
-          ))}
-        </div>
+        <div className="space-y-3">{[1, 2, 3, 4].map((i) => <div key={i} className="h-20 bg-white border border-slate-100 rounded-2xl animate-pulse shadow-sm" />)}</div>
       ) : trades.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-200 mt-4">
           <History size={36} className="mb-3 text-slate-300" />
@@ -303,9 +226,7 @@ export default function TradesPage() {
         <div>
           {Object.entries(grouped).map(([date, items]) => (
             <DateGroup key={date} date={date}>
-              {items.map((trade) => (
-                <TradeCard key={trade.id} trade={trade} displayCurrency={displayCurrency} exchangeRate={exchangeRate} />
-              ))}
+              {items.map((trade) => <TradeCard key={trade.id} trade={trade} displayCurrency={displayCurrency} exchangeRate={exchangeRate} />)}
             </DateGroup>
           ))}
         </div>
@@ -313,23 +234,9 @@ export default function TradesPage() {
 
       {total > LIMIT && (
         <div className="flex items-center justify-center gap-3 mt-8">
-          <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={page === 0}
-            className="px-4 py-2 bg-white border border-slate-200 shadow-sm rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-slate-50 text-slate-600 transition-colors"
-          >
-            이전
-          </button>
-          <span className="text-xs font-bold text-slate-400">
-            {page + 1} / {Math.ceil(total / LIMIT)}
-          </span>
-          <button
-            onClick={() => setPage((p) => p + 1)}
-            disabled={(page + 1) * LIMIT >= total}
-            className="px-4 py-2 bg-white border border-slate-200 shadow-sm rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-slate-50 text-slate-600 transition-colors"
-          >
-            다음
-          </button>
+          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="px-4 py-2 bg-white border border-slate-200 shadow-sm rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-slate-50 text-slate-600 transition-colors">이전</button>
+          <span className="text-xs font-bold text-slate-400">{page + 1} / {Math.ceil(total / LIMIT)}</span>
+          <button onClick={() => setPage((p) => p + 1)} disabled={(page + 1) * LIMIT >= total} className="px-4 py-2 bg-white border border-slate-200 shadow-sm rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-slate-50 text-slate-600 transition-colors">다음</button>
         </div>
       )}
     </main>
