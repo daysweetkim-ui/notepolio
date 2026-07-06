@@ -140,9 +140,12 @@ export default function AccountModal({ onClose }: { onClose: () => void }) {
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    // 💡 화면 밑으로 깔리던 증상을 없애고, 중앙 정렬(items-center)과 여백(p-4) 추가
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white text-slate-900 rounded-t-3xl sm:rounded-3xl p-6 max-h-[85vh] overflow-y-auto shadow-2xl">
+      
+      {/* 💡 기기 높이가 작아도 스크롤(overflow-y-auto, max-h-[85vh])이 가능하게끔 안전 장치 적용 */}
+      <div className="relative w-full max-w-lg bg-white text-slate-900 rounded-3xl p-5 sm:p-6 max-h-[85vh] overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-black text-slate-900">계좌 관리</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-slate-100 p-1.5 rounded-full">

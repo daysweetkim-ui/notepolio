@@ -77,12 +77,13 @@ export default function DashboardPage() {
   ]
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+    // 💡 가로폭(max-w-lg) 통일 및 하단 여백(pb-24) 추가로 스크롤 시 짤림 방지
+    <main className="max-w-lg mx-auto px-4 pt-6 pb-24 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-700 tracking-tight">대시보드</h1>
         <button
           onClick={() => setViewCurrency(viewCurrency === "KRW" ? "USD" : "KRW")}
-          className="flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-colors shadow-sm"
+          className="flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-colors shadow-sm shrink-0"
         >
           {viewCurrency === "KRW" ? <Banknote size={14} /> : <DollarSign size={14} />}
           {viewCurrency === "KRW" ? "원화 보기" : "달러 보기"}
@@ -94,48 +95,36 @@ export default function DashboardPage() {
       {summaryLoading ? (
         <div className="h-48 bg-white border border-slate-200 rounded-3xl animate-pulse shadow-sm" />
       ) : summary ? (
-        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+        <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm space-y-4">
           
-          {/* 💡 해결 1: 부드러운 텍스트 크기와 6개 칸이 자로 잰 듯 똑같은 크기로 정렬된 자산 그리드 블록 */}
-          <div className="grid grid-cols-3 gap-2.5">
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-center shadow-sm">
-              <p className="text-[10px] font-bold text-slate-400 mb-1">총 자산</p>
-              <p className="text-sm font-black text-slate-700">{fmt(summary.total_asset)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-center shadow-sm">
-              <p className="text-[10px] font-bold text-slate-400 mb-1">주식 평가액</p>
-              <p className="text-sm font-black text-slate-700">{fmt(summary.total_stock_value)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-center shadow-sm">
-              <p className="text-[10px] font-bold text-slate-400 mb-1">현금 잔고</p>
-              <p className="text-sm font-black text-slate-700">{fmt(summary.total_cash)}</p>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-center shadow-sm">
-              <p className="text-[10px] font-bold text-slate-400 mb-1">매입 금액</p>
-              <p className="text-sm font-black text-slate-700">{fmt(summary.total_stock_buy)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-center shadow-sm">
-              <p className="text-[10px] font-bold text-slate-400 mb-1">평가 금액</p>
-              <p className="text-sm font-black text-slate-700">{fmt(summary.total_stock_value)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-center shadow-sm">
-              <p className="text-[10px] font-bold text-slate-400 mb-1">평가 손익</p>
-              <p className={`text-sm ${pnlColor(summary.total_stock_buy, summary.total_stock_value)}`}>
-                {fmtPct(summary.total_stock_buy, summary.total_stock_value)}
-              </p>
-            </div>
+          {/* 💡 그리드 텍스트에 truncate를 넣어 박스를 벗어나지 않도록 수정 */}
+          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+            {[
+              { label: "총 자산", val: fmt(summary.total_asset) },
+              { label: "주식 평가액", val: fmt(summary.total_stock_value) },
+              { label: "현금 잔고", val: fmt(summary.total_cash) },
+              { label: "매입 금액", val: fmt(summary.total_stock_buy) },
+              { label: "평가 금액", val: fmt(summary.total_stock_value) },
+              { label: "평가 손익", val: fmtPct(summary.total_stock_buy, summary.total_stock_value), isPct: true }
+            ].map((item, idx) => (
+              <div key={idx} className="bg-slate-50 border border-slate-100 rounded-2xl p-2 sm:p-3 text-center shadow-sm overflow-hidden">
+                <p className="text-[10px] font-bold text-slate-400 mb-1 truncate">{item.label}</p>
+                <p className={`text-xs sm:text-sm font-black truncate ${item.isPct ? pnlColor(summary.total_stock_buy, summary.total_stock_value) : "text-slate-700"}`}>
+                  {item.val}
+                </p>
+              </div>
+            ))}
           </div>
           
         </div>
       ) : null}
 
-      <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+      <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200">
         <div className="flex items-center justify-between mb-6">
-          <p className="text-sm font-bold text-slate-600">{selectedAccountId ? `${accounts.find((a) => a.id === selectedAccountId)?.name}` : "전체 자산"} 비중 (합계 100%)</p>
-          <div className="flex bg-slate-100 rounded-xl p-1">
+          <p className="text-sm font-bold text-slate-600 truncate mr-2">{selectedAccountId ? `${accounts.find((a) => a.id === selectedAccountId)?.name}` : "전체 자산"} 비중 (합계 100%)</p>
+          <div className="flex bg-slate-100 rounded-xl p-1 shrink-0">
             {chartViewOptions.map((opt) => (
-              <button key={opt.key} onClick={() => setChartView(opt.key)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${chartView === opt.key ? "bg-white text-violet-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>{opt.label}</button>
+              <button key={opt.key} onClick={() => setChartView(opt.key)} className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${chartView === opt.key ? "bg-white text-violet-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>{opt.label}</button>
             ))}
           </div>
         </div>
