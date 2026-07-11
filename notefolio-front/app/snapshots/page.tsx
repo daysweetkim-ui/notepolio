@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { fetchSnapshots, createSnapshot, fetchPortfolioSummary } from "@/lib/api"
 import { Camera, Plus, X } from "lucide-react"
 
+// app/snapshots/page.tsx 내의 SnapshotModal 내부 로직 수정
+
 function SnapshotModal({ onClose, summary }: { onClose: () => void, summary: any }) {
   const qc = useQueryClient()
   const [memo, setMemo] = useState("")
@@ -20,9 +22,14 @@ function SnapshotModal({ onClose, summary }: { onClose: () => void, summary: any
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["snapshots"] })
       onClose()
+      alert("스냅샷이 결산 다이어리에 성공적으로 저장되었습니다!");
+    },
+    // 💡 에러 발생 시 묵묵부답이 아니라 경고창을 제대로 띄우도록 에러 핸들러를 추가합니다.
+    onError: (err: any) => {
+      alert(`스냅샷 저장 실패: ${err.response?.data?.detail || err.message}`)
     }
   })
-
+  
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />

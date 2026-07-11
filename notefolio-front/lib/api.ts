@@ -125,12 +125,12 @@ export async function createSnapshot(data: {
   total_cash: number;
   memo?: string;
 }) {
-  const res = await api.post("/snapshots", data);
+  const res = await api.post("/snapshots", data); 
   return res.data;
 }
 
 export async function fetchSnapshots() {
-  const res = await api.get("/snapshots");
+  const res = await api.get("/snapshots"); 
   return res.data;
 }
 
@@ -139,20 +139,20 @@ export async function createTimelineEvent(data: {
   event_type: string;
   ticker?: string;
   title: string;
-  event_date: string; // ISO string format (e.g., "2024-08-01T00:00:00Z")
+  event_date: string;
   memo?: string;
   link?: string;
 }) {
-  const res = await api.post("/timeline", data);
+  const res = await api.post("/timeline", data); 
   return res.data;
 }
 
 export async function fetchTimelineEvents() {
-  const res = await api.get("/timeline");
+  const res = await api.get("/timeline"); 
   return res.data;
 }
 
 export async function deleteTimelineEvent(eventId: number) {
-  const res = await api.delete(`/timeline/${eventId}`);
+  const res = await api.delete(`/timeline/${eventId}`); 
   return res.data;
 }
