@@ -26,6 +26,8 @@ from database import (
     StockMeta,
     StockPriceCache,
     Trade,
+    PortfolioSnapshot,  # 💡 [NEW] 스냅샷 DB 모델 추가
+    TimelineEvent,      # 💡 [NEW] 타임라인 DB 모델 추가
     get_db,
     init_db,
     User
@@ -62,7 +64,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 💡 완벽하게 통합된 CORS 출입 명단 (도플갱어 제거 완료!)
+# 💡 완벽하게 통합된 CORS 출입 명단
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -212,6 +214,34 @@ class TradeOut(BaseModel):
             traded_at=t.traded_at,
             created_at=t.created_at,
         )
+
+# 💡 [NEW] 스냅샷 및 타임라인 스키마 모델 추가
+class SnapshotCreate(BaseModel):
+    total_asset: float
+    total_stock_buy: float
+    total_stock_eval: float
+    total_cash: float
+    memo: str | None = None
+
+class SnapshotOut(SnapshotCreate):
+    id: int
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+class TimelineEventCreate(BaseModel):
+    event_type: str
+    ticker: str | None = None
+    title: str
+    event_date: datetime
+    memo: str | None = None
+    link: str | None = None
+
+class TimelineEventOut(TimelineEventCreate):
+    id: int
+    created_at: datetime
+    class Config:
+        from_attributes = True
 
 
 # ─────────────────────────────────────────────
@@ -930,6 +960,45 @@ def get_market_sentiment(db: Session = Depends(get_db)):
         "cached_at": now,
         "source": "live",
     }
+
+# ─────────────────────────────────────────────
+# 💡 [NEW] 라우터: 스냅샷 (Snapshots)
+# ─────────────────────────────────────────────
+@app.post("/api/snapshots", response_model=SnapshotOut, tags=["스냅샷"])
+def create_snapshot(body: SnapshotCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db_snapshot = PortfolioSnapshot(**body.model_dump(), user_id=current_user.id)
+    db.add(db_snapshot)
+    db.commit()
+    db.refresh(db_snapshot)
+    return db_snapshot
+
+@app.get("/api/snapshots", response_model=list[SnapshotOut], tags=["스냅샷"])
+def list_snapshots(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(PortfolioSnapshot).filter(PortfolioSnapshot.user_id == current_user.id).order_by(PortfolioSnapshot.created_at.desc()).all()
+
+
+# ─────────────────────────────────────────────
+# 💡 [NEW] 라우터: 타임라인 (Timeline)
+# ─────────────────────────────────────────────
+@app.post("/api/timeline", response_model=TimelineEventOut, tags=["타임라인"])
+def create_timeline_event(body: TimelineEventCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db_event = TimelineEvent(**body.model_dump(), user_id=current_user.id)
+    db.add(db_event)
+    db.commit()
+    db.refresh(db_event)
+    return db_event
+
+@app.get("/api/timeline", response_model=list[TimelineEventOut], tags=["타임라인"])
+def list_timeline_events(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(TimelineEvent).filter(TimelineEvent.user_id == current_user.id).order_by(TimelineEvent.event_date.asc()).all()
+
+@app.delete("/api/timeline/{event_id}", status_code=204, tags=["타임라인"])
+def delete_timeline_event(event_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db_event = db.query(TimelineEvent).filter(TimelineEvent.id == event_id, TimelineEvent.user_id == current_user.id).first()
+    if not db_event:
+        raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
+    db.delete(db_event)
+    db.commit()
 
 
 # ─────────────────────────────────────────────

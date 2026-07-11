@@ -289,6 +289,55 @@ class MarketSentimentCache(Base):
 
 
 # ─────────────────────────────────────────────
+# [NEW] 신규 테이블: 포트폴리오 스냅샷
+# ─────────────────────────────────────────────
+class PortfolioSnapshot(Base):
+    """
+    포트폴리오 스냅샷 (결산 기록용)
+    """
+    __tablename__ = "portfolio_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    total_asset: Mapped[float] = mapped_column(Float, nullable=False)       # 총 자산
+    total_stock_buy: Mapped[float] = mapped_column(Float, nullable=False)   # 매입금 총액
+    total_stock_eval: Mapped[float] = mapped_column(Float, nullable=False)  # 평가금 총액
+    total_cash: Mapped[float] = mapped_column(Float, nullable=False)        # 현금 잔고
+    memo: Mapped[str | None] = mapped_column(Text, nullable=True)           # 메모
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+    # relationship
+    user: Mapped["User"] = relationship("User")
+
+
+# ─────────────────────────────────────────────
+# [NEW] 신규 테이블: 타임라인 이벤트
+# ─────────────────────────────────────────────
+class TimelineEvent(Base):
+    """
+    타임라인 이벤트 (수동 메모 + 관심종목 실적일 등)
+    """
+    __tablename__ = "timeline_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)     # EARNING, MACRO, CUSTOM
+    ticker: Mapped[str | None] = mapped_column(String(20), nullable=True)   # 관련 티커
+    title: Mapped[str] = mapped_column(String(100), nullable=False)         # 일정 제목
+    event_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)  # 이벤트 날짜
+    memo: Mapped[str | None] = mapped_column(Text, nullable=True)           # 메모
+    link: Mapped[str | None] = mapped_column(Text, nullable=True)           # 외부 링크
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+    # relationship
+    user: Mapped["User"] = relationship("User")
+
+
+# ─────────────────────────────────────────────
 # 유틸리티
 # ─────────────────────────────────────────────
 
@@ -318,4 +367,3 @@ def get_db() -> Generator[Session, None, None]:
         raise
     finally:
         db.close()
-        

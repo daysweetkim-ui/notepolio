@@ -59,8 +59,12 @@ function HoldingCard({
 
   const pc = holding.price_info
   const currentPrice = pc?.current_price ?? holding.avg_price
+  
+  // 💡 매입금액, 평가금액, 평가손익(절대금액) 계산
+  const buyValue = holding.avg_price * holding.quantity
   const evalValue = currentPrice * holding.quantity
-  const totalPnlPct = holding.avg_price > 0 ? ((currentPrice - holding.avg_price) / holding.avg_price) * 100 : null
+  const pnlAmount = evalValue - buyValue
+  const totalPnlPct = holding.avg_price > 0 ? (pnlAmount / buyValue) * 100 : null
 
   const { mutate: remove } = useMutation({
     mutationFn: () => deleteHolding(holding.id),
@@ -73,10 +77,7 @@ function HoldingCard({
   const accountName = accounts.find(a => a.id === holding.account_id)?.name ?? ""
 
   return (
-    // 💡 relative와 overflow-hidden을 추가하여 내부 요소들이 삐져나가지 않게 정리합니다.
     <div className="bg-white border border-slate-200 shadow-sm hover:shadow-md rounded-3xl p-4 sm:p-5 mb-4 relative overflow-hidden">
-      
-      {/* 💡 상단 헤더: 점 세개 버튼을 absolute로 띄워서 텍스트를 밀어내지 않게 수정! */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 cursor-pointer pr-1" onClick={() => onTradeClick(holding)}>
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -109,7 +110,6 @@ function HoldingCard({
               {totalPnlPct != null ? fmtPct(totalPnlPct) : "—"}
             </p>
           </div>
-          {/* 💡 공중에 띄워서 항상 우측 상단에 고정되는 점 세개 아이콘 */}
           <button 
             onClick={(e) => { e.stopPropagation(); setShowActions(!showActions); }} 
             className="absolute right-3 top-4 sm:top-5 text-slate-400 hover:text-slate-700 bg-slate-50 p-1.5 rounded-full transition-colors shrink-0"
@@ -140,16 +140,21 @@ function HoldingCard({
         </div>
       )}
 
-      {/* 💡 금액이 커져도 칸을 벗어나지 않도록 truncate(말줄임) 클래스 적용 */}
+      {/* 💡 총 6칸짜리 상세 그리드로 변경: 매입, 평가, 손익금액이 추가되었습니다! */}
       <div className="grid grid-cols-3 gap-2 cursor-pointer" onClick={() => onTradeClick(holding)}>
         {[
+          { label: "매입 금액", value: fmtPrice(buyValue, displayCurrency, exchangeRate) },
+          { label: "평가 금액", value: fmtPrice(evalValue, displayCurrency, exchangeRate) },
+          { label: "평가 손익", value: (pnlAmount > 0 ? "+" : "") + fmtPrice(pnlAmount, displayCurrency, exchangeRate), isPnl: true },
+          { label: "평균 단가", value: fmtPrice(holding.avg_price, displayCurrency, exchangeRate) },
           { label: "현재가", value: fmtPrice(pc?.current_price, displayCurrency, exchangeRate) },
-          { label: "평균단가", value: fmtPrice(holding.avg_price, displayCurrency, exchangeRate) },
-          { label: "수량", value: holding.quantity.toString() },
+          { label: "보유 수량", value: holding.quantity.toLocaleString() },
         ].map((item) => (
           <div key={item.label} className="bg-slate-50 border border-slate-100 rounded-xl px-2 sm:px-3 py-2 sm:py-2.5 overflow-hidden">
             <p className="text-[10px] font-bold text-slate-400 mb-1 truncate">{item.label}</p>
-            <p className="text-[11px] sm:text-xs font-black text-slate-800 truncate">{item.value}</p>
+            <p className={`text-[11px] sm:text-xs font-black truncate ${item.isPnl ? pnlColor(totalPnlPct) : "text-slate-800"}`}>
+              {item.value}
+            </p>
           </div>
         ))}
       </div>
@@ -158,14 +163,7 @@ function HoldingCard({
 }
 
 // ── 현금 입출금 모달 ────────────────────────────────────────
-
-function CashModal({
-  accounts,
-  onClose,
-}: {
-  accounts: Account[]
-  onClose: () => void
-}) {
+function CashModal({ accounts, onClose }: { accounts: Account[]; onClose: () => void }) {
   const qc = useQueryClient()
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? 0)
   const [type, setType] = useState<"deposit" | "withdraw">("deposit")
@@ -179,10 +177,7 @@ function CashModal({
       const delta = parseFloat(amount.replace(/,/g, ""))
       const next = type === "deposit" ? current + delta : current - delta
       if (next < 0) throw new Error("잔고가 부족합니다")
-      return updateCash(accountId, {
-        amount: next,
-        currency: "KRW",
-      })
+      return updateCash(accountId, { amount: next, currency: "KRW" })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["accounts"] })
@@ -207,9 +202,7 @@ function CashModal({
               key={t}
               onClick={() => setType(t)}
               className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                type === t
-                  ? t === "deposit" ? "bg-emerald-500 text-white shadow-md" : "bg-red-500 text-white shadow-md"
-                  : "text-slate-500 hover:text-slate-700"
+                type === t ? (t === "deposit" ? "bg-emerald-500 text-white shadow-md" : "bg-red-500 text-white shadow-md") : "text-slate-500 hover:text-slate-700"
               }`}
             >
               {t === "deposit" ? "입금" : "출금"}
@@ -225,11 +218,7 @@ function CashModal({
               value={accountId}
               onChange={(e) => setAccountId(Number(e.target.value))}
             >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} (현재 ₩{a.cash_amount.toLocaleString()})
-                </option>
-              ))}
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} (현재 ₩{a.cash_amount.toLocaleString()})</option>)}
             </select>
             <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
@@ -253,9 +242,7 @@ function CashModal({
         <button
           onClick={() => submitCash()}
           disabled={!amount || isPending}
-          className={`w-full rounded-2xl py-3.5 font-bold text-sm transition-colors disabled:opacity-40 shadow-md text-white ${
-            type === "deposit" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-red-500 hover:bg-red-600"
-          }`}
+          className={`w-full rounded-2xl py-3.5 font-bold text-sm transition-colors disabled:opacity-40 shadow-md text-white ${type === "deposit" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-red-500 hover:bg-red-600"}`}
         >
           {isPending ? "처리 중..." : type === "deposit" ? "입금" : "출금"}
         </button>
@@ -265,7 +252,6 @@ function CashModal({
 }
 
 // ── 종목 등록 모달 ────────────────────────────────────────
-
 function AddHoldingModal({ accounts, onClose }: { accounts: Account[]; onClose: () => void }) {
   const qc = useQueryClient()
   const [query, setQuery] = useState("")
@@ -316,9 +302,7 @@ function AddHoldingModal({ accounts, onClose }: { accounts: Account[]; onClose: 
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === "Enter" && document.getElementById("searchBtn")?.click()}
             />
-            <button
-              id="searchBtn"
-              onClick={async () => {
+            <button id="searchBtn" onClick={async () => {
                 if (!query.trim()) return
                 setSearching(true)
                 const res = await searchStock(query.trim())
@@ -334,11 +318,7 @@ function AddHoldingModal({ accounts, onClose }: { accounts: Account[]; onClose: 
           {searchResults.length > 0 && !selected && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl max-h-40 overflow-y-auto">
               {searchResults.map(r => (
-                <button
-                  key={r.ticker}
-                  onClick={() => { setSelected(r); setSearchResults([]) }}
-                  className="w-full text-left px-3 py-2.5 border-b border-slate-200 text-xs text-slate-800 hover:bg-slate-100 last:border-0"
-                >
+                <button key={r.ticker} onClick={() => { setSelected(r); setSearchResults([]) }} className="w-full text-left px-3 py-2.5 border-b border-slate-200 text-xs text-slate-800 hover:bg-slate-100 last:border-0">
                   <strong className="text-sm font-black mr-1">{r.ticker}</strong>
                   <span className="text-slate-500">{r.name}</span>
                 </button>
@@ -365,13 +345,7 @@ function AddHoldingModal({ accounts, onClose }: { accounts: Account[]; onClose: 
 
           <div>
             <label className="text-xs font-bold text-slate-500 block mb-1">매입 단가 (₩ 원화) *</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              className="w-full border border-slate-300 p-3 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-violet-500"
-              placeholder="0"
-              value={formatInputNumber(avgPrice)}
-              onChange={e => {
+            <input type="text" inputMode="decimal" className="w-full border border-slate-300 p-3 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-violet-500" placeholder="0" value={formatInputNumber(avgPrice)} onChange={e => {
                 const raw = e.target.value.replace(/,/g, "")
                 if(/^\d*$/.test(raw)) setAvgPrice(raw)
               }}
@@ -380,13 +354,7 @@ function AddHoldingModal({ accounts, onClose }: { accounts: Account[]; onClose: 
 
           <div>
             <label className="text-xs font-bold text-slate-500 block mb-1">수량 *</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              className="w-full border border-slate-300 p-3 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-violet-500"
-              placeholder="0"
-              value={formatInputNumber(quantity)}
-              onChange={e => {
+            <input type="text" inputMode="decimal" className="w-full border border-slate-300 p-3 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-violet-500" placeholder="0" value={formatInputNumber(quantity)} onChange={e => {
                 const raw = e.target.value.replace(/,/g, "")
                 if(/^\d*\.?\d*$/.test(raw)) setQuantity(raw)
               }}
@@ -416,83 +384,50 @@ export default function HoldingsPage() {
   const [tradeTarget, setTradeTarget] = useState<HoldingOut | null>(null)
   const [displayCurrency, setDisplayCurrency] = useState<"KRW" | "USD">("KRW")
 
-  const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: fetchAccounts })
-  const { data: holdings = [], isLoading } = useQuery({ queryKey: ["holdings", filterAccountId], queryFn: () => fetchHoldings(filterAccountId) })
+  // 💡 [수정됨] useQuery에 명확한 타입 <Account[]> 과 <HoldingOut[]>을 추가했습니다!
+  const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ["accounts"], queryFn: fetchAccounts })
+  const { data: holdings = [], isLoading } = useQuery<HoldingOut[]>({ queryKey: ["holdings", filterAccountId], queryFn: () => fetchHoldings(filterAccountId) })
   const { data: summary } = useQuery<any>({ queryKey: ["portfolio-summary", null], queryFn: () => fetchPortfolioSummary(null) })
   
   const exchangeRate = summary?.exchange_rate ?? 1400
 
   return (
-    // 💡 가로 사이즈를 max-w-lg로 통일하고 하단 바에 가리지 않도록 pb-24를 추가했습니다!
     <main className="max-w-lg mx-auto px-4 pt-6 pb-24 space-y-5">
-      
-      {/* 상단 헤더 및 기능 버튼들 */}
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-xl font-bold text-slate-800 tracking-tight">내 주식현황</h1>
         <div className="flex items-center gap-2">
-          {/* 💡 좁은 모바일 화면을 위해 hidden sm:inline 클래스로 작은 화면에서 텍스트를 숨김 처리합니다. */}
-          <button
-            onClick={() => setDisplayCurrency(displayCurrency === "KRW" ? "USD" : "KRW")}
-            className="flex items-center gap-1 bg-white border border-slate-200 px-2.5 py-2 rounded-xl text-xs font-bold text-slate-500 shadow-sm hover:bg-slate-50 transition-colors shrink-0"
-          >
+          <button onClick={() => setDisplayCurrency(displayCurrency === "KRW" ? "USD" : "KRW")} className="flex items-center gap-1 bg-white border border-slate-200 px-2.5 py-2 rounded-xl text-xs font-bold text-slate-500 shadow-sm hover:bg-slate-50 transition-colors shrink-0">
             {displayCurrency === "KRW" ? <Banknote size={14} /> : <DollarSign size={14} />}
             <span className="hidden sm:inline">{displayCurrency === "KRW" ? "원화" : "달러"}</span>
           </button>
           
-          <button
-            onClick={() => setShowAccountModal(true)}
-            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 px-2.5 py-2 rounded-xl text-xs font-bold transition-colors text-slate-700 shrink-0"
-          >
+          <button onClick={() => setShowAccountModal(true)} className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 px-2.5 py-2 rounded-xl text-xs font-bold transition-colors text-slate-700 shrink-0">
             <Wallet size={14} />
             <span className="hidden sm:inline">계좌</span>
           </button>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1 bg-violet-600 hover:bg-violet-700 text-white px-2.5 py-2 rounded-xl text-xs font-bold shadow-sm transition-colors shrink-0"
-          >
+          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-1 bg-violet-600 hover:bg-violet-700 text-white px-2.5 py-2 rounded-xl text-xs font-bold shadow-sm transition-colors shrink-0">
             <Plus size={14} />
             <span className="hidden sm:inline">추가</span>
           </button>
         </div>
       </div>
 
-      {/* 계좌 필터 탭 바 (가로 스크롤 가능) */}
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
-        <button
-          onClick={() => setFilterAccountId(null)}
-          className={`shrink-0 px-4 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-            filterAccountId === null ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
-          }`}
-        >
-          전체
-        </button>
+        <button onClick={() => setFilterAccountId(null)} className={`shrink-0 px-4 py-1.5 rounded-full text-xs font-bold border transition-colors ${filterAccountId === null ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}>전체</button>
         {accounts.map(a => (
-          <button
-            key={a.id}
-            onClick={() => setFilterAccountId(a.id)}
-            className={`shrink-0 px-4 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-              filterAccountId === a.id ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
-            }`}
-          >
+          <button key={a.id} onClick={() => setFilterAccountId(a.id)} className={`shrink-0 px-4 py-1.5 rounded-full text-xs font-bold border transition-colors ${filterAccountId === a.id ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}>
             {a.name}
           </button>
         ))}
       </div>
 
-      <button
-        onClick={() => setShowCashModal(true)}
-        className="flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-full text-xs font-bold transition-colors text-emerald-600 shadow-sm"
-      >
-        <Banknote size={15} />
-        현금 입출금
+      <button onClick={() => setShowCashModal(true)} className="flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-full text-xs font-bold transition-colors text-emerald-600 shadow-sm">
+        <Banknote size={15} /> 현금 입출금
       </button>
 
-      {/* 종목 리스트 */}
       {isLoading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => <div key={i} className="h-40 bg-white border border-slate-100 rounded-3xl animate-pulse shadow-sm" />)}
-        </div>
+        <div className="space-y-4">{[1, 2, 3].map((i) => <div key={i} className="h-40 bg-white border border-slate-100 rounded-3xl animate-pulse shadow-sm" />)}</div>
       ) : holdings.length === 0 ? (
         <div className="text-center py-20 bg-white border border-dashed border-slate-200 rounded-3xl text-sm text-slate-400 font-bold shadow-sm">
           <TrendingUp size={40} className="mx-auto mb-3 text-slate-200" />
@@ -506,7 +441,6 @@ export default function HoldingsPage() {
         </div>
       )}
 
-      {/* 모달 창들 */}
       {showAddModal && <AddHoldingModal accounts={accounts} onClose={() => setShowAddModal(false)} />}
       {tradeTarget && <TradeModal holding={tradeTarget} accounts={accounts} displayCurrency={displayCurrency} exchangeRate={exchangeRate} onClose={() => setTradeTarget(null)} />}
       {showCashModal && <CashModal accounts={accounts} onClose={() => setShowCashModal(false)} />}

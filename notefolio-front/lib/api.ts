@@ -115,3 +115,44 @@ export const updateCash = async (
 export const deleteTrade = async (id: number): Promise<void> => {
   await api.delete(`/api/trades/${id}`)
 }
+
+
+// --- 스냅샷 ---
+export async function createSnapshot(data: {
+  total_asset: number;
+  total_stock_buy: number;
+  total_stock_eval: number;
+  total_cash: number;
+  memo?: string;
+}) {
+  const res = await api.post("/snapshots", data);
+  return res.data;
+}
+
+export async function fetchSnapshots() {
+  const res = await api.get("/snapshots");
+  return res.data;
+}
+
+// --- 타임라인 ---
+export async function createTimelineEvent(data: {
+  event_type: string;
+  ticker?: string;
+  title: string;
+  event_date: string; // ISO string format (e.g., "2024-08-01T00:00:00Z")
+  memo?: string;
+  link?: string;
+}) {
+  const res = await api.post("/timeline", data);
+  return res.data;
+}
+
+export async function fetchTimelineEvents() {
+  const res = await api.get("/timeline");
+  return res.data;
+}
+
+export async function deleteTimelineEvent(eventId: number) {
+  const res = await api.delete(`/timeline/${eventId}`);
+  return res.data;
+}

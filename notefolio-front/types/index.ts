@@ -135,3 +135,24 @@ export interface TradesResponse {
   limit: number
   items: TradeOut[]
 }
+
+export interface SnapshotOut {
+  id: number;
+  total_asset: number;
+  total_stock_buy: number;
+  total_stock_eval: number;
+  total_cash: number;
+  memo?: string;
+  created_at: string;
+}
+
+export interface TimelineEventOut {
+  id: number;
+  event_type: string;
+  ticker?: string;
+  title: string;
+  event_date: string;
+  memo?: string;
+  link?: string;
+  created_at: string;
+}
